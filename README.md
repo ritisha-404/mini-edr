@@ -1,4 +1,4 @@
-# mini-edr
+# mini-edr (in development)
 
 A minimal host-based endpoint detection sensor for Linux, modeled loosely on
 the telemetry-and-detection loop used by **CrowdStrike Falcon** and
