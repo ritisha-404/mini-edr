@@ -1,12 +1,3 @@
-// mini-edr: a minimal host-based EDR sensor for Linux
-// Mimics the core telemetry loop of products like CrowdStrike Falcon /
-// SentinelOne: enumerate running processes, watch the filesystem for
-// suspicious writes, score events against heuristics, emit JSON alerts.
-//
-// This is a STARTING POINT, not a product. Real EDR sensors hook syscalls
-// (via eBPF/kprobes) instead of polling /proc, and correlate telemetry
-// server-side. Ideas for extending this are in the README.
-
 #include <chrono>
 #include <dirent.h>
 #include <fstream>
@@ -23,9 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// Utility: current time as ISO-ish string for log lines
-// ---------------------------------------------------------------------------
+
 static std::string nowTimestamp() {
     auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     char buf[32];
@@ -33,10 +22,7 @@ static std::string nowTimestamp() {
     return std::string(buf);
 }
 
-// ---------------------------------------------------------------------------
-// Alert emission (JSON lines -> stdout + alerts.log)
-// In a real product this would ship to a cloud backend over TLS.
-// ---------------------------------------------------------------------------
+
 struct Alert {
     std::string severity; // low/medium/high
     std::string category; // process | filesystem
@@ -60,9 +46,6 @@ static void emitAlert(const Alert& a) {
     if (out) out << line << "\n";
 }
 
-// ---------------------------------------------------------------------------
-// Process monitoring: poll /proc, diff against known PIDs, inspect new ones
-// ---------------------------------------------------------------------------
 class ProcessMonitor {
 public:
     void poll() {
@@ -78,8 +61,6 @@ public:
 
 private:
     std::unordered_set<int> knownPids;
-
-    // Suspicious command-line indicators. Extend this list, or better,
     // replace it with a proper YARA/Sigma-style rule loader (see mini-siem).
     const std::vector<std::pair<std::regex, std::string>> suspiciousPatterns = {
         {std::regex("base64\\s+-d"), "base64 decode piped to shell (possible dropper)"},
@@ -129,14 +110,14 @@ private:
         std::string exePath = readExePath(pid);
         if (cmdline.empty()) return; // likely a kernel thread or already exited
 
-        // Heuristic 1: pattern match on the full command line
+        // heuristic 1: pattern match on the full command line
         for (const auto& [pattern, reason] : suspiciousPatterns) {
             if (std::regex_search(cmdline, pattern)) {
                 emitAlert({"high", "process", reason + " | cmd=" + cmdline, "pid:" + std::to_string(pid)});
             }
         }
 
-        // Heuristic 2: process executing from a world-writable temp location
+        // heuristic 2: process executing from a world-writable temp location
         if (exePath.rfind("/tmp/", 0) == 0 || exePath.rfind("/dev/shm/", 0) == 0 ||
             exePath.rfind("/var/tmp/", 0) == 0) {
             emitAlert({"medium", "process", "binary executing from writable temp dir: " + exePath,
@@ -145,10 +126,6 @@ private:
     }
 };
 
-// ---------------------------------------------------------------------------
-// Filesystem monitoring via inotify: watch directories commonly abused for
-// staging payloads or persistence.
-// ---------------------------------------------------------------------------
 class FileMonitor {
 public:
     FileMonitor(std::vector<std::string> paths) : watchPaths(std::move(paths)) {
@@ -183,7 +160,6 @@ private:
     void handleEvent(const std::string& path, uint32_t mask) {
         bool becameExecutable = false;
         if (mask & IN_ATTRIB) {
-            // Check if permission bits now include execute
             struct stat st;
             if (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IXUSR)) {
                 becameExecutable = true;
@@ -199,7 +175,6 @@ private:
     }
 };
 
-// ---------------------------------------------------------------------------
 int main() {
     std::cout << "mini-edr sensor starting up. Watching processes + /tmp, /dev/shm.\n";
 
